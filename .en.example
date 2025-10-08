@@ -1,0 +1,19 @@
+
+# Rutas/servicios
+QDRANT_URL= https://YOUR-QDRANT:6333
+QDRANT_COLLECTION= clauses_es_v1
+
+EMBED_URL=http://localhost:11434/api/embeddings
+EMBED_MODEL=nomic-embed-text
+
+# IA (si usas un LLM externo)
+LLM_BASE_URL=
+LLM_MODEL=
+LLM_API_KEY=
+
+# RAG
+TOP_K=5
+MIN_SIM_SCORE=0.35
+
+# Seguridad (opcional para el Webhook)
+WEBHOOK_API_KEY=
