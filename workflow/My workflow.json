@@ -1,0 +1,269 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v1/rag/query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "19c0fc2b-9dad-458e-9d15-46b53a0dd5ba",
+      "name": "Webhook",
+      "webhookId": "0b730a7e-c222-446f-9f1c-e7d95605b8ef"
+    },
+    {
+      "parameters": {
+        "enableResponseOutput": true,
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1856,
+        0
+      ],
+      "id": "06431cd7-a9fb-49b4-8050-52195d726684",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un asistente legal. Recibes una consulta del usuario (prompt) y un contexto (ctx) con fragmentos de normativa española.\n- Usa SOLO el contexto para fundamentar.\n- No agregues texto fuera del JSON.\n- Si el contexto no es suficiente, deja \"answer\" vacía y explica por qué en \"read_line_suggestion\".\n\n{{\n`Clausula: ${$('Review input').first().json.prompt}\n\nContexto:\n\n${$json.ctx}\n\nDevuelve SOLO JSON válido con este esquema:\n{\n  \"score\": \"<de 0 - 10 donde 0 es riesgo bajo y 10 riesgo critico>\",\n \"risk_level\": \"LOW|MEDIUM|HIGH|CRITICAL\"\n  \"answer\": \"<texto breve y claro evaluando las clausulas según el contexto>\",\n  \"policy_citation\": \"<norma/artículo principal>\",\n  \"read_line_suggestion\": \"<frase a leer literal del corpus>\"\n}`\n}}\n\nREGLAS:\n- Calcula \"risk_level\" a partir de \"score\": 0–3=LOW, 4–6=MEDIUM, 7–8=HIGH, 9–10=CRITICAL.\n- \"policy_citation\": cita del contexto  más relevante (o el que mejor sustente la conclusión).\n- \"read_line_suggestion\": línea breve literal del contexyo (del mismo contexto citado).\n- No inventes información que no esté en ctx.\n`}}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "7569978a-7e67-4fee-90f9-5354eebb823d",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Entrada desde Webhook: body.question, body.top_k?\nconst body = $input.first().json.body || {};\n\nconst prompt = body.prompt ?? '';\n\nif (!prompt) {\n  throw new Error(\"The 'prompt' is missing in the body of the request.\");\n}\n\nconst top_k = Number(body.top_k ?? 5);\n\nreturn [{\n  prompt: prompt,\n  top_k\n}];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        0
+      ],
+      "id": "d086aac4-2ccf-4547-a800-12459444125b",
+      "name": "Review input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ca34003364dc.ngrok-free.app/collections/clauses_es_v1/points/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n{\n\"vector\": $json.embedding,\n\"limit\": $('Review input').item.json.top_k ?? 5,\n\"with_payload\": true\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        0
+      ],
+      "id": "364e5466-e044-47ec-b1e2-752c28e6e18f",
+      "name": "Search in Qdrant"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://aa91ed2a5571.ngrok-free.app/api/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"nomic-embed-text\",\n  \"prompt\": \"={{ $json.prompt }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        496,
+        0
+      ],
+      "id": "6bf6f51a-06fb-4410-a438-5c8eaac0b2a9",
+      "name": "Embedding"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        224
+      ],
+      "id": "c3ae77c8-0af4-4e25-a306-abe8f96496df",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mDQ8YzmrIiKectew",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Toma el prompt del nodo \"Review input\"\nconst prompt = $('Review input').first().json.prompt\n\n// Toma los resultados de Qdrant\nconst corpus_results = $input.first().json.result ?? [];\n\n// Validaciones\nif (!Array.isArray(corpus_results) || corpus_results.length === 0) {\n  throw new Error('Sin resultados del search (Qdrant).');\n}\n\n// Contexto para el agente AI\nconst ctx = corpus_results\n  .map((h, i) => `[#${i+1}] (${h.payload.doc_id})\n  ${h.payload.norma} ${h.payload.texto}`)\n  .join('\\n');\nreturn [{ prompt, ctx}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        0
+      ],
+      "id": "04925e5f-866d-46f5-a607-79b14f5daca3",
+      "name": "Built Prompt"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validar estructura del output\nconst output = $input.first().json.output;\n\n// Limpiar posibles etiquetas de código Markdown del output\nlet cleanedOutput = output;\nif (typeof output === 'string') {\n  // Quitar etiquetas de bloque de código (por ejemplo, ```json ... ```)\n  cleanedOutput = output.replace(/^\\s*```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n}\n\nlet parsed;\ntry {\n  parsed = typeof cleanedOutput === 'string' ? JSON.parse(cleanedOutput) : cleanedOutput;\n} catch (e) {\n  throw new Error('Output no es JSON válido: ' + e.message);\n}\n\n// Validar atributos obligatorios\nconst required = ['score', 'risk_level', 'answer', 'policy_citation', 'read_line_suggestion'];\nconst missing = required.filter(attr => !(attr in parsed));\n\nif (missing.length > 0) {\n  throw new Error(`Faltan atributos: ${missing.join(', ')}`);\n}\n\n// Retornar objeto validado\nreturn { json: parsed };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        0
+      ],
+      "id": "b7d07928-61a0-459e-a072-cabc1bc0ee93",
+      "name": "Output Format"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Review input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Output Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review input": {
+      "main": [
+        [
+          {
+            "node": "Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search in Qdrant": {
+      "main": [
+        [
+          {
+            "node": "Built Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embedding": {
+      "main": [
+        [
+          {
+            "node": "Search in Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Built Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Format": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b1c0a66d-018c-45b2-b74e-97ae4f04293e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "26c0f1e401ea14a8fe8b8fe99db25cc683bfefc5b5ace0d8df33a607e53a6f38"
+  },
+  "id": "2wpR4aJRvuDmc7M2",
+  "tags": []
+}
